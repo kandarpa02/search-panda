@@ -4,7 +4,9 @@ from pathlib import Path
 import json
 
 BASE_URL = {
-    'groq':"https://api.groq.com/openai/v1"
+    'groq':"https://api.groq.com/openai/v1",
+    'deepseek':"https://api.deepseek.com/v1",
+    'openai':"https://api.openai.com/v1"
 }
 
 REASONING_MODELS = {

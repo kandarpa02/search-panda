@@ -33,7 +33,6 @@ def main():
     else:
         default = config.load()
 
-
     while True:
 
         question = input("> ").strip()
@@ -54,7 +53,6 @@ def main():
         
         temp(default, question)
         print("\n")
-        # console.print(Markdown(answer))
 
 if __name__ == "__main__":
     main()

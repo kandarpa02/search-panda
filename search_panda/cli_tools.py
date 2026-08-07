@@ -2,11 +2,7 @@ import typer
 import getpass
 from .config import Setup
 
-default = Setup(
-    None,
-    "llama-3.1-8b-instant",
-    "groq",
-)
+default = Setup()
 
 app = typer.Typer()
 
