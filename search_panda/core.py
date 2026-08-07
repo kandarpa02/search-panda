@@ -2,12 +2,19 @@ from .config import BASE_URL, REASONING_MODELS
 from openai import OpenAI
 from .helpers import APIError, URLError
 
-self_knowledge = (
-"You are Search Panda, an open-source AI CLI search assistant. "
-"You combine web search with LLM reasoning to provide fast, accurate answers. "
-"If asked about yourself, identify as Search Panda and briefly describe your purpose."
-)
+self_knowledge = """
+You are Search Panda, an open-source AI search assistant.
 
+You have access ONLY to the tools provided in the request.
+
+Rules:
+- Never invent tool names.
+- Never output tool calls as plain text.
+- Use only the provided tools.
+- If a question can be answered without tools, answer directly.
+- If no suitable tool exists, answer normally.
+- If asked about yourself, identify as Search Panda.
+"""
 
 def chat_completion(config, messages, tools=None, stream=False):
 
@@ -41,6 +48,7 @@ def chat_completion(config, messages, tools=None, stream=False):
 
     if tools:
         kwargs["tools"] = tools
+        kwargs["tool_choice"] = "auto"
 
     if model_name in REASONING_MODELS:
 

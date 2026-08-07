@@ -1,26 +1,39 @@
 from .cli_tools import default, api_key, model, provider
-from .core import chat_completion
+from .agents import agent_completion
 from .config import ConfigManager, CONFIG_DIR, CONFIG_FILE
+
 import os
+
 from rich.console import Console
 from rich.markdown import Markdown
+
 
 config = ConfigManager()
 console = Console()
 
+
 def temp(config, message):
-    response = chat_completion(config, "You are a helpful chatbot", message)
-    for chunk in response:
-        delta = chunk.choices[0].delta.content
-        if delta:
-            console.print(delta, end="")
+
+    response = agent_completion(
+        config=config,
+        prompt=message,
+    )
+
+    console.print(
+        Markdown(response)
+    )
 
 def main():
-    global config
+
     global default
-    print("Welcome to search-panda 🐼")
+
+    console.print(
+        "[bold cyan]Welcome to Search Panda 🐼[/bold cyan]"
+    )
+
     if not config.exists():
-        print(f"Setup the engine...")
+
+        console.print("Setup the engine...")
 
         api_key()
         model()
@@ -28,31 +41,65 @@ def main():
 
         config.save(default)
 
-        print("Environment is ready.")
-        print("Enjoy chatting! 🐼🎍")
+        console.print("Environment is ready.")
+        console.print("Enjoy chatting! 🐼🎍")
+
     else:
+
         default = config.load()
 
     while True:
 
-        question = input("> ").strip()
+        try:
 
-        if question.lower() in {"exit", "quit"}:
-            print("Goodbye")
+            question = input("> ").strip()
+
+            if question.lower() in {"exit", "quit"}:
+
+                console.print("Goodbye!")
+                break
+
+            if question.lower() == "remove":
+
+                console.print(
+                    "Removed current config. Run Search Panda again to setup."
+                )
+
+                os.remove(CONFIG_FILE)
+
+                try:
+
+                    os.rmdir(CONFIG_DIR)
+
+                except OSError:
+
+                    pass
+
+                break
+
+            if not question:
+
+                continue
+
+            temp(
+                default,
+                question
+            )
+
+            console.print()
+
+        except KeyboardInterrupt:
+
+            console.print("\nGoodbye!")
             break
 
-        if question.lower() in {"remove"}:
-            print("Removed current config, you need to setup a new one later.")
+        except Exception as e:
 
-            os.remove(CONFIG_FILE)
-            os.removedirs(CONFIG_DIR)
-            break
+            console.print(
+                f"[red]{e}[/red]"
+            )
 
-        if not question:
-            continue
-        
-        temp(default, question)
-        print("\n")
 
 if __name__ == "__main__":
+
     main()

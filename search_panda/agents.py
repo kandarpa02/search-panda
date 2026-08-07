@@ -6,7 +6,6 @@ from .search import search, read_result
 
 
 def agent_completion(config, prompt):
-
     messages = [
         {
             "role": "user",
@@ -26,25 +25,29 @@ def agent_completion(config, prompt):
         message = response.choices[0].message
 
         if not message.tool_calls:
-            return message.content
+            return message.content or ""
 
         messages.append(message)
 
         for tool_call in message.tool_calls:
 
             name = tool_call.function.name
-            args = json.loads(tool_call.function.arguments)
+
+            try:
+                args = json.loads(tool_call.function.arguments)
+            except Exception:
+                args = {}
 
             if name == "search":
 
                 result = search(
-                    args["query"]
+                    args.get("query", "")
                 )
 
             elif name == "read_result":
 
                 result = read_result(
-                    args["index"]
+                    args.get("index", -1)
                 )
 
             else:
