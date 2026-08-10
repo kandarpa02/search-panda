@@ -1,6 +1,7 @@
 from .config import BASE_URL, REASONING_MODELS
 from openai import OpenAI
 from .helpers import APIError, URLError
+import json 
 
 self_knowledge = """
 You are Search Panda, an open-source AI search assistant.
@@ -15,9 +16,13 @@ Rules:
 - If no suitable tool exists, answer normally.
 - If asked about yourself, identify as Search Panda.
 """
-
-def chat_completion(config, messages, tools=None, stream=False):
-
+def chat_completion(
+    config,
+    messages,
+    tools=None,
+    tool_choice=None,
+    stream=False
+):
     model_name = config.model
     api_key = config.api_key
     provider = config.provider
@@ -48,7 +53,9 @@ def chat_completion(config, messages, tools=None, stream=False):
 
     if tools:
         kwargs["tools"] = tools
-        kwargs["tool_choice"] = "auto"
+
+    if tool_choice is not None:
+        kwargs["tool_choice"] = tool_choice
 
     if model_name in REASONING_MODELS:
 
@@ -66,4 +73,5 @@ def chat_completion(config, messages, tools=None, stream=False):
         else:
             kwargs["reasoning_effort"] = effort
 
+    # print(json.dumps(kwargs, indent=2, default=str))
     return client.chat.completions.create(**kwargs)

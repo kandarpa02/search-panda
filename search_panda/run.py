@@ -1,5 +1,5 @@
 from .cli_tools import default, api_key, model, provider
-from .agents import agent_completion
+from .agent.agents import agent_completion
 from .config import ConfigManager, CONFIG_DIR, CONFIG_FILE
 
 import os
