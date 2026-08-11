@@ -1,81 +1,101 @@
 import json
-
+from collections.abc import Sequence
 from ..core import chat_completion
 from ..tools import TOOLS
 from .search import search, read_result
+from ..helpers import APIError, URLError
+
+from agents import (
+    Agent,
+    Runner,
+    AsyncOpenAI,
+    OpenAIChatCompletionsModel,
+    WebSearchTool,
+    set_tracing_disabled
+)
+
+from ..config import Setup, BASE_URL
+
+self_knowledge = """
+You are Search Panda, an open-source AI search assistant.
+
+You have access ONLY to the tools provided in the request.
+
+Rules:
+- Never invent tool names.
+- Never output tool calls as plain text.
+- Use only the provided tools.
+- If a question can be answered without tools, answer directly.
+- If no suitable tool exists, answer normally.
+- If asked about yourself, identify as Search Panda.
+"""
+
+# async def agent_completion(config:Setup, message:Sequence[str]):
+#     MODEL = config.model
+#     API_KEY = config.api_key
+#     PROVIDER = config.provider
+#     URL = BASE_URL.get(config.provider, None)
+
+#     if URL is None:
+#         raise URLError(f"'provider'={PROVIDER} has no valid url")
+    
+#     if API_KEY is None:
+#         raise APIError("'api_key' can not be None")
 
 
-def agent_completion(config, prompt):
+#     client = AsyncOpenAI(
+#         api_key=API_KEY,
+#         base_url=URL,
+#     )
 
-    use_web = "--web" in prompt
+#     model = OpenAIChatCompletionsModel(
+#         model=MODEL,
+#         openai_client=client,
+#     )
 
-    if use_web:
-        prompt = prompt.replace("--web", "").strip()
+#     agent = Agent(
+#         name="SearchPanda",
+#         instructions=self_knowledge,
+#         model=model,
+#         tools=[search, read_result],
+#     )
 
-    messages = [
-        {
-            "role": "user",
-            "content": prompt
-        }
-    ]
+#     set_tracing_disabled(True)
 
-    tools = TOOLS if use_web else None
-    tool_choice = "required" if use_web else None
+#     result = await Runner.run(
+#         agent,
+#         message
+#     )
 
-    while True:
+#     return result.final_output
 
-        response = chat_completion(
-            config=config,
-            messages=messages,
-            tools=tools,
-            tool_choice=tool_choice,
-            stream=False
-        )
 
-        message = response.choices[0].message
+async def agent_completion(config:Setup, message:Sequence[str]):
+    MODEL = str(config.model)
+    URL = 'http://localhost:1890/v1'
 
-        if not message.tool_calls:
-            return message.content or ""
+    client = AsyncOpenAI(
+        api_key="charliekirk",
+        base_url=URL,
+    )
 
-        messages.append(message)
+    model = OpenAIChatCompletionsModel(
+        model=MODEL,
+        openai_client=client,
+    )
 
-        for tool_call in message.tool_calls:
+    agent = Agent(
+        name="SearchPanda",
+        instructions=self_knowledge,
+        model=model,
+        tools=[search, read_result],
+    )
 
-            name = tool_call.function.name
+    set_tracing_disabled(True)
 
-            try:
-                args = json.loads(
-                    tool_call.function.arguments
-                )
-            except Exception:
-                args = {}
+    result = await Runner.run(
+        agent,
+        message
+    )
 
-            if name == "search":
-
-                result = search(
-                    args.get("query", "")
-                )
-
-            elif name == "read_result":
-
-                result = read_result(
-                    args.get("index", -1)
-                )
-
-            else:
-
-                result = {
-                    "error": f"Unknown tool '{name}'."
-                }
-
-            messages.append(
-                {
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "content": json.dumps(result)
-                }
-            )
-
-            # After the first tool call, allow the model
-            # to decide whether another tool call is needed.
-            tool_choice = "auto"
+    return result.final_output

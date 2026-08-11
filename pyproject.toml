@@ -14,7 +14,9 @@ dependencies = [
     "tenacity==9.1.2",
     "loguru==0.7.3",
     "typer",
-    "trafilatura"
+    "trafilatura",
+    "llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu",
+    "huggingface_hub
 ]
 
 [project.scripts]

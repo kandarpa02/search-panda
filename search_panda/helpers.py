@@ -6,3 +6,12 @@ class APIError(BaseException):
 class URLError(BaseException):
     def __init__(self, *args):
         super().__init__(*args)
+
+
+class UnknownCommand(BaseException):
+    def __init__(self, *args):
+        super().__init__(*args)
+
+class CLIError(BaseException):
+    def __init__(self, *args):
+        super().__init__(*args)

@@ -43,12 +43,13 @@ class ConfigManager:
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-            json.dump(asdict(setup), f, indent=4)
+            json.dump(asdict(setup), f, indent=4, default=str)
 
     def load(self) -> Setup:
         with open(CONFIG_FILE, encoding="utf-8") as f:
             data = json.load(f)
 
+        data["model"] = Path(data["model"])
         return Setup(**data)
 
 

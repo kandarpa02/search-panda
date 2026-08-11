@@ -1,39 +1,44 @@
 import trafilatura
 from ddgs import DDGS
+from agents import function_tool
 
-_SEARCH_RESULTS = []
+RESULTS = []
 
 
-def search(query, max_results=5):
-    global _SEARCH_RESULTS
-
-    _SEARCH_RESULTS = []
+@function_tool
+def search(query: str, max_results: int = 5) -> list[dict]:
+    """Search the web and return search results."""
+    global RESULTS
+    RESULTS = []
 
     with DDGS() as ddgs:
-        response = ddgs.text(query, max_results=max_results)
+        response = ddgs.text(
+            query,
+            max_results=max_results,
+        )
 
         for i, item in enumerate(response):
-            _SEARCH_RESULTS.append(
-                {
-                    "index": i,
-                    "title": item.get("title", ""),
-                    "url": item.get("href") or item.get("url", ""),
-                    "snippet": item.get("body", "")
-                }
-            )
+            RESULTS.append({
+                "index": i,
+                "title": item.get("title", ""),
+                "url": item.get("href") or item.get("url", ""),
+                "snippet": item.get("body", ""),
+            })
 
-    return _SEARCH_RESULTS
+    return RESULTS
 
 
-def read_result(index):
-    global _SEARCH_RESULTS
+@function_tool
+def read_result(index: int) -> dict:
+    """Read and extract the contents of a search result by index."""
+    global RESULTS
 
-    if index < 0 or index >= len(_SEARCH_RESULTS):
+    if index < 0 or index >= len(RESULTS):
         return {
             "error": "Invalid search result index."
         }
 
-    result = _SEARCH_RESULTS[index]
+    result = RESULTS[index]
 
     if not result.get("url"):
         return {
@@ -58,8 +63,12 @@ def read_result(index):
             "error": "Failed to extract webpage."
         }
 
+
     return {
         "title": result["title"],
         "url": result["url"],
         "content": text
     }
+
+
+
