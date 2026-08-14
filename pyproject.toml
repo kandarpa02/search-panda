@@ -1,11 +1,11 @@
 [project]
 name = "search-panda"
 version = "0.1.0"
-
+requires-python = ">=3.10"
 dependencies = [
     "fastapi==0.118.0",
     "openai==2.5.0",
-    "ddgs",
+    "duckduckgo-search==8.1.1",
     "httpx==0.28.1",
     "pydantic==2.11.7",
     "python-dotenv==1.1.1",
@@ -15,9 +15,11 @@ dependencies = [
     "loguru==0.7.3",
     "typer",
     "trafilatura",
-    "llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu",
-    "huggingface_hub
+    "rich"
 ]
 
 [project.scripts]
-search-panda = "search_panda.run:main"
+search_panda = "search_panda.run:main"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

@@ -1,11 +1,11 @@
+import re
+
 import trafilatura
 from ddgs import DDGS
-from agents import function_tool
 
 RESULTS = []
 
 
-@function_tool
 def search(query: str, max_results: int = 5) -> list[dict]:
     """Search the web and return search results."""
     global RESULTS
@@ -28,7 +28,6 @@ def search(query: str, max_results: int = 5) -> list[dict]:
     return RESULTS
 
 
-@function_tool
 def read_result(index: int) -> dict:
     """Read and extract the contents of a search result by index."""
     global RESULTS
@@ -62,7 +61,6 @@ def read_result(index: int) -> dict:
         return {
             "error": "Failed to extract webpage."
         }
-
 
     return {
         "title": result["title"],

@@ -1,7 +1,7 @@
-from .config import BASE_URL, REASONING_MODELS
+from .config import BASE_URL, REASONING_MODELS, DEFAULT_OLLAMA_BASE_URL
 from openai import OpenAI
 from .helpers import APIError, URLError
-import json 
+import json
 
 self_knowledge = """
 You are Search Panda, an open-source AI search assistant.
@@ -15,7 +15,11 @@ Rules:
 - If a question can be answered without tools, answer directly.
 - If no suitable tool exists, answer normally.
 - If asked about yourself, identify as Search Panda.
+- For current, recent, or external factual questions, decide whether web search is necessary before answering.
+- If the query requires fresh information, use the web search tools; otherwise answer from the model's general knowledge.
 """
+
+
 def chat_completion(
     config,
     messages,
@@ -23,16 +27,13 @@ def chat_completion(
     tool_choice=None,
     stream=False
 ):
-    model_name = config.model
-    api_key = config.api_key
-    provider = config.provider
-    base_url = BASE_URL.get(provider, None)
+    model_name = config.model or "llama3.1:8b"
+    api_key = config.api_key or "ollama"
+    provider = (config.provider or "ollama").lower()
+    base_url = getattr(config, "base_url", None) or BASE_URL.get(provider, DEFAULT_OLLAMA_BASE_URL)
 
     if base_url is None:
         raise URLError(f"'provider'={provider} has no valid url")
-
-    if api_key is None:
-        raise APIError("'api_key' can not be None")
 
     client = OpenAI(
         api_key=api_key,
@@ -58,7 +59,6 @@ def chat_completion(
         kwargs["tool_choice"] = tool_choice
 
     if model_name in REASONING_MODELS:
-
         effort = config.reasoning_level
 
         if effort is None:
