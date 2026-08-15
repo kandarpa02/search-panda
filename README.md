@@ -1,70 +1,128 @@
 # Search Panda 🐼
 
-A local, privacy-first AI search assistant built around Ollama and the OpenAI Agents SDK.
+Private, local-first AI search for the modern web.
 
-Search Panda is a secure, agentic search engine for people who want AI-powered answers without sending their questions to a third-party cloud service by default. It runs locally, searches the web when needed, reads the best result, and then uses a local model to answer with context.
+Search Panda is a secure, agentic search assistant that combines local Ollama models with web search and source-grounded answers. It helps you find fresh information, inspect the most relevant web result, and answer questions using local AI while keeping the default experience on your machine.
 
-```text
-      ___..---..___
-   .-""  _   _  ""-.
-  /   .' \/ \/ '.   \
-  |   /  .  .  .  \
-   \  \  .  .  .  / /
-    `-`-.___.__.-'`
-        /  _  \
-       |  ( )  |
-        \  `-' /
-         `-.__.-'
+## Why teams and developers use Search Panda
 
-             Search Panda
-```
+Search Panda is built for users who want the speed and intelligence of AI search without depending on a cloud-only workflow.
 
-## What makes this project special
+- Private by default: runs with local Ollama instead of a remote model by default
+- Agentic search: decides when web search is useful and uses retrieved information
+- Source-aware answers: reads the most relevant page before answering
+- Flexible model choice: switch between local Ollama models easily
+- Easy to run: simple terminal-based workflow for fast experimentation and local use
 
-This project is more than a simple chatbot. It behaves like a lightweight autonomous agent:
+## How it works
 
-- it decides when a question needs live web information
-- it runs a web search using DuckDuckGo
-- it fetches and reads the most relevant page
-- it passes that content to the local model
-- it returns an answer grounded in the retrieved information
+Search Panda follows a simple, reliable workflow:
 
-Because the default setup uses local Ollama, the system is secure-by-default and friendly to privacy-conscious users.
+1. You ask a question.
+2. The agent decides whether live web information is needed.
+3. It performs a targeted search using DuckDuckGo.
+4. It reads the most relevant result and extracts usable content.
+5. It sends that grounded context to a local Ollama model.
+6. It returns a concise answer based on the retrieved information.
 
-## Why it is secure and local-first
+## Product value
 
-The app is configured around a local Ollama endpoint by default:
+Search Panda is designed for privacy-conscious users, developers, and teams who want:
+
+- secure local AI interactions
+- a better answer quality than plain search alone
+- the ability to use fresh web information with local model reasoning
+- a lightweight, self-hosted alternative to cloud AI search tools
+
+## Security and privacy
+
+By default, Search Panda is configured for a local Ollama setup:
 
 - provider: ollama
 - base URL: http://localhost:11434/v1
 - API key: "ollama"
 
-That means the default experience is designed to stay on your machine instead of depending on a cloud LLM provider. If you intentionally change the provider or endpoint, you can use remote models, but the built-in setup is local-first.
+This makes the default experience local-first and self-contained. You can still change the model or provider intentionally, but the built-in design favors privacy, control, and local execution.
 
-## Features
+## Core features
 
-- local LLM support through Ollama
-- OpenAI-compatible API integration
-- web search using DuckDuckGo
-- page fetching and content extraction
-- grounded answers using live search results
-- interactive terminal chat interface
-- configurable model selection
-- beginner-friendly CLI workflow
+- Local LLM inference with Ollama
+- OpenAI-compatible integration for agent tooling
+- Search-driven answers with live web context
+- Result reading and content extraction from fetched pages
+- Interactive CLI experience
+- Model selection via simple command-line configuration
+- Built for developers and privacy-first workflows
 
-## How it works
+## Quick start
 
-Search Panda follows this flow:
+### 1. Install Ollama
 
-1. user asks a question
-2. the agent decides whether live search is needed
-3. it searches the web for relevant results
-4. it reads the best matching page
-5. it extracts readable text from that page
-6. it asks the local Ollama model to answer using that context
-7. it returns the final answer in the terminal
+Install Ollama for your operating system, then start the local server:
 
-## Project structure
+```bash
+ollama serve
+```
+
+Pull a model:
+
+```bash
+ollama pull llama3.1:8b
+```
+
+### 2. Install Search Panda
+
+```bash
+git clone <your-repo-url>
+cd search-panda
+python -m venv .venv
+```
+
+Activate the environment:
+
+```bash
+# Windows
+.venv\Scripts\activate
+
+# macOS / Linux
+source .venv/bin/activate
+```
+
+Install dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+Or install the package in editable mode:
+
+```bash
+pip install -e .
+```
+
+### 3. Run the app
+
+Set a model:
+
+```bash
+search-panda set llama3.1:8b
+```
+
+Or run directly:
+
+```bash
+python -m search_panda.run --model llama3.1:8b
+```
+
+Then start asking questions:
+
+```text
+search-panda> What happened in AI this week?
+search-panda> What is the latest status of OpenAI?
+search-panda> Explain recursion in Python
+```
+
+## Architecture
 
 ```text
 search-panda/
@@ -88,159 +146,55 @@ search-panda/
 └── search_panda.egg-info/
 ```
 
-## Requirements
+## Configuration
 
-Before running Search Panda, make sure you have:
-
-- Python 3.10 or newer
-- Ollama installed and running locally
-- a model pulled in Ollama, such as llama3.1:8b or qwen2.5:7b
-
-## Install Ollama
-
-Install Ollama for your operating system, then start it:
-
-```bash
-ollama serve
-```
-
-Pull a model:
-
-```bash
-ollama pull llama3.1:8b
-```
-
-## Install Search Panda
-
-Clone the repository:
-
-```bash
-git clone <your-repo-url>
-cd search-panda
-```
-
-Create a virtual environment:
-
-```bash
-python -m venv .venv
-```
-
-Activate it:
-
-```bash
-# Windows
-.venv\Scripts\activate
-
-# macOS / Linux
-source .venv/bin/activate
-```
-
-Install dependencies:
-
-```bash
-pip install -r requirements.txt
-```
-
-Or install the package in editable mode:
-
-```bash
-pip install -e .
-```
-
-## Run the app
-
-Set a model once:
-
-```bash
-search-panda set llama3.1:8b
-```
-
-Or start directly with a model name:
-
-```bash
-python -m search_panda.run --model llama3.1:8b
-```
-
-Once it starts, you will see a prompt like this:
-
-```text
-search-panda>
-```
-
-Type your question and press Enter.
-
-### Example questions
-
-```text
-search-panda> What happened in AI this week?
-search-panda> What is the latest status of OpenAI?
-search-panda> Explain recursion in Python
-```
-
-## Default configuration
-
-The app stores its local config in:
+The app stores its local config here:
 
 ```text
 ~/.search-panda/config.json
 ```
 
-The default model and local URL are set for Ollama:
+Default settings are designed around local Ollama:
 
 ```python
 DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434/v1"
 DEFAULT_MODEL = "llama3.1:8b"
 ```
 
-## Important note about security and privacy
+## Use cases
 
-This project is intentionally designed for local-first usage. In its default state:
+Search Panda is useful for:
 
-- prompts do not need to go to a cloud AI provider
-- the model runs on your local machine
-- the app can pull current web information without losing the local-first design
-- you keep more control over your data and your model choices
-
-That is why Search Panda feels like a secure, privacy-conscious, agentic AI search tool.
+- current-events questions that require live web information
+- research-style prompts grounded in relevant sources
+- local AI workflows where privacy matters
+- developer exploration and experimentation with agent-based search
 
 ## Troubleshooting
 
 ### Ollama is not running
 
-Start it with:
-
 ```bash
 ollama serve
 ```
 
-### Model not found
-
-Download the model:
+### Model is missing
 
 ```bash
 ollama pull llama3.1:8b
 ```
 
-### App cannot reach local Ollama
+### App cannot connect to Ollama
 
-Check that the local API is available at:
+Ensure the local endpoint is available:
 
 ```text
 http://localhost:11434/v1
 ```
 
-### Search fails
+### Search returns no results
 
-The app uses DuckDuckGo search and fetches page content with an extraction library. If a site is unavailable or blocked, the tool will return a clean error instead of crashing.
-
-## Development status
-
-This project is small, practical, and easy to understand. It is a good example of:
-
-- local-first AI application design
-- agentic workflows using tools and search
-- secure-by-default architecture
-- simple Python CLI development
+Search Panda uses DuckDuckGo. If a result is unavailable or blocked, the application will surface a clean error rather than failing silently.
 
 ## License
 
@@ -248,4 +202,4 @@ This project is released under the MIT license.
 
 ---
 
-Built with privacy in mind, powered locally by Ollama, and guided by an agentic search workflow. 🐼
+Built for safe, local AI search with a product mindset. 🐼
