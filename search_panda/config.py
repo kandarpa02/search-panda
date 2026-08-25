@@ -30,6 +30,7 @@ class Setup:
     provider: str = "ollama"
     base_url: str = DEFAULT_OLLAMA_BASE_URL
     reasoning_level: Optional[str] = None
+    web_mode: str = "on"  # "on", "off", or "auto"
 
 
 CONFIG_DIR = Path.home() / ".search-panda"
@@ -61,11 +62,6 @@ class ConfigManager:
         data.setdefault("model", DEFAULT_MODEL)
         data.setdefault("provider", "ollama")
         data.setdefault("base_url", DEFAULT_OLLAMA_BASE_URL)
+        data.setdefault("web_mode", "on")
 
         return Setup(**data)
-
-
-import os
-
-# os.remove(CONFIG_FILE)
-# os.removedirs(CONFIG_DIR)

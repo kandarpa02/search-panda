@@ -1,3 +1,15 @@
+"""Search Panda agent — wires the planner, search, and LLM together.
+
+Optimized for local models (including 1B/3B/8B/70B):
+- plan_and_search: fetches search results AND automatically reads top page
+  contents in parallel, delivering complete grounded evidence immediately.
+- read_page: tool for targeted manual page extraction if needed.
+- refine_search: tool for follow-up search angles.
+"""
+
+from __future__ import annotations
+
+import sys
 from collections.abc import Sequence
 
 from agents import (
@@ -8,120 +20,186 @@ from agents import (
     function_tool,
     set_tracing_disabled,
 )
+from loguru import logger
+from rich.console import Console
 
 from ..config import Setup, DEFAULT_OLLAMA_BASE_URL
-from .search import search, read_result
+from .planner import plan
+from .search import (
+    search_parallel,
+    fetch_and_extract,
+    fetch_pages_parallel,
+    search as search_single,
+)
+
+# Suppress verbose default logger output
+logger.remove()
+
+console = Console()
+
+# Track last retrieved sources for clean UI display
+LAST_SOURCES: list[dict[str, str]] = []
 
 
-SEARCH_PANDA_INSTRUCTIONS = """You are Search Panda, an autonomous AI search agent.
+# ---------------------------------------------------------------------------
+# Agent system prompt
+# ---------------------------------------------------------------------------
 
-Your job is to answer the user's question accurately and concisely.
+SEARCH_PANDA_INSTRUCTIONS = """You are Search Panda, a fast, accurate AI search assistant.
 
-You have access to a web search tool. Use it when the question requires
-current, recent, changing, or externally verifiable information.
+Your role is to give users direct, factual, and well-sourced answers using live web evidence.
 
-USE SEARCH when the question asks about:
-- Recent events, people, outcomes, or developments
-- Current prices, weather, news, markets, or other changing information
-- Specific dates or time references such as 2024, 2025, 2026, today, this week, etc.
-- Verification of claims or events
-- Current status of people, organizations, products, or events
-- Information where your built-in knowledge may be outdated
-
-DO NOT SEARCH when:
-- The question asks for general timeless knowledge
-- The question asks for an explanation of an established concept
-- The question is philosophical or opinion-based
-- The answer does not require current external information
-
-When you search:
-1. Construct a focused search query.
-2. Search the web.
-3. Inspect the available results.
-4. Retrieve the most relevant result when useful.
-5. Answer the user's original question using the retrieved information.
-6. Do not mention internal tool mechanics unless relevant.
-
-When you do not search, answer directly.
-
-Never fabricate search results or claim that you searched when you did not.
+Guidelines:
+1. When asked a question, use `plan_and_search` to find live information from the web.
+2. Form your final answer using the search results and page extracts provided by the tool.
+3. Answer directly, clearly, and concisely.
+4. If the retrieved evidence shows that an event has not happened yet, is scheduled for the future, or is not yet announced, explain that clearly to the user with the details found.
+5. Never invent or hallucinate facts or URLs.
 """
 
 
+# ---------------------------------------------------------------------------
+# Tool: plan_and_search
+# ---------------------------------------------------------------------------
+
 @function_tool
-def web_search(query: str) -> str:
-    """Search the web for current or externally verifiable information.
+async def plan_and_search(query: str) -> str:
+    """Search the web for information relevant to the user query.
+
+    Automatically plans the search, retrieves relevant pages, and extracts
+    their content to provide comprehensive evidence.
 
     Args:
-        query: A focused search query.
+        query: The user's question or search topic.
     """
-    try:
-        results = search(query, max_results=3)
-    except Exception as exc:
-        return f"Search failed: {exc}"
+    global LAST_SOURCES
+    LAST_SOURCES = []
+
+    query_plan = plan(query, web_mode="on")
+    sub_queries = query_plan.sub_queries or [query]
+
+    # Light, clean visual indicators
+    console.print(f"[dim]• Planning: [cyan]{query_plan.intent}[/cyan] ({'time-sensitive' if query_plan.time_sensitive else 'general'})[/dim]")
+    for sq in sub_queries:
+        console.print(f"[dim]• Searching: [cyan]{sq}[/cyan][/dim]")
+
+    results = await search_parallel(sub_queries, max_results_each=5)
 
     if not results:
-        return "No search results were found."
+        return "No search results found on the web for this query. Answer based on available context."
 
-    if all("error" in result for result in results):
-        errors = [
-            str(result.get("error"))
-            for result in results
-            if result.get("error")
-        ]
-        return f"Search failed: {'; '.join(errors)}"
+    # Store for clean UI presentation
+    for r in results[:5]:
+        LAST_SOURCES.append({
+            "title": r.title,
+            "url": r.url,
+            "domain": r.domain or "",
+            "snippet": r.snippet,
+        })
 
-    output: list[str] = []
+    # Automatically fetch top 2 URLs in parallel for instant deep context
+    top_urls = [r.url for r in results if r.url][:2]
+    if top_urls:
+        console.print(f"[dim]• Reading {len(top_urls)} top sources...[/dim]")
 
-    for index, result in enumerate(results):
-        if "error" in result:
-            continue
+    extracted_pages = await fetch_pages_parallel(top_urls, max_pages=2)
+    page_map = {p.url: p for p in extracted_pages}
 
-        output.append(
-            f"RESULT {index + 1}\n"
-            f"Title: {result.get('title', '')}\n"
-            f"URL: {result.get('url', '')}\n"
-            f"Snippet: {result.get('snippet', '')}"
-        )
+    output_blocks: list[str] = [
+        f"WEB SEARCH EVIDENCE (Intent: {query_plan.intent}):\n"
+    ]
 
-    return "\n\n".join(output) or "No usable search results were found."
+    for i, r in enumerate(results[:5]):
+        output_blocks.append(f"[Source {i + 1}] {r.title}")
+        output_blocks.append(f"URL: {r.url}")
+        output_blocks.append(f"Snippet: {r.snippet}")
 
+        if r.url in page_map:
+            page = page_map[r.url]
+            excerpt = page.content[:1500].replace("\n\n", "\n")
+            output_blocks.append(f"Key Excerpt from page:\n{excerpt}\n")
+        else:
+            output_blocks.append("")
+
+    output_blocks.append(
+        "INSTRUCTIONS FOR FINAL ANSWER:\n"
+        "Synthesize a clear, direct answer to the user's question using the evidence above. "
+        "If the event is in the future or not yet decided, state that clearly."
+    )
+
+    return "\n".join(output_blocks)
+
+
+# ---------------------------------------------------------------------------
+# Tool: read_page
+# ---------------------------------------------------------------------------
 
 @function_tool
-def read_search_result(result_index: int) -> str:
-    """Read the full content of a previously returned search result.
+def read_page(url: str) -> str:
+    """Fetch and read the full text content of a specific web page.
 
     Args:
-        result_index: Zero-based index of the search result.
+        url: Full URL of the page to fetch and read.
     """
-    try:
-        result = read_result(result_index)
-    except Exception as exc:
-        return f"Unable to read search result: {exc}"
+    console.print(f"[dim]• Fetching page: [cyan]{url}[/cyan][/dim]")
+    page = fetch_and_extract(url)
 
-    if "error" in result:
-        return f"Unable to read search result: {result['error']}"
+    if page is None:
+        return f"Could not fetch or extract content from: {url}"
 
-    content = result.get("content", "")
+    content = page.content
+    if len(content) > 8000:
+        cutoff = content.rfind(". ", 0, 8000)
+        content = content[: cutoff + 1] if cutoff > 0 else content[:8000]
+        content += "\n\n[Content truncated]"
 
-    if not content:
-        return "The search result contained no readable content."
+    return f"PAGE: {page.title or url}\nURL: {url}\n\n{content}"
 
-    return content[:8000]
 
+# ---------------------------------------------------------------------------
+# Tool: refine_search
+# ---------------------------------------------------------------------------
+
+@function_tool
+def refine_search(query: str, context: str) -> str:
+    """Run a focused follow-up search when initial results need refinement.
+
+    Args:
+        query: A refined search query.
+        context: Context of what is still missing.
+    """
+    console.print(f"[dim]• Refining search: [cyan]{query}[/cyan][/dim]")
+    results = search_single(query, max_results=5)
+
+    if not results:
+        return "Refined search returned no results."
+
+    lines: list[str] = [
+        f"Refined search results for: {query!r}\n",
+    ]
+    for i, r in enumerate(results):
+        lines.append(
+            f"[{i + 1}] {r.title}\n"
+            f"URL: {r.url}\n"
+            f"Snippet: {r.snippet[:300]}\n"
+        )
+
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Agent factory
+# ---------------------------------------------------------------------------
 
 def _build_agent(config: Setup) -> Agent:
-    """Build a Search Panda agent using the configured model."""
-
+    """Construct the Search Panda agent for the given config."""
     model_name = str(config.model or "llama3.1:8b")
     base_url = str(
-        getattr(config, "base_url", None)
-        or DEFAULT_OLLAMA_BASE_URL
+        getattr(config, "base_url", None) or DEFAULT_OLLAMA_BASE_URL
     ).rstrip("/")
 
-    # Ollama exposes an OpenAI-compatible Chat Completions endpoint.
     client = AsyncOpenAI(
-        api_key="ollama",
+        api_key=str(config.api_key or "ollama"),
         base_url=base_url,
     )
 
@@ -130,37 +208,44 @@ def _build_agent(config: Setup) -> Agent:
         openai_client=client,
     )
 
+    tools = [plan_and_search, read_page, refine_search]
+
     return Agent(
         name="Search Panda",
         instructions=SEARCH_PANDA_INSTRUCTIONS,
         model=model,
-        tools=[
-            web_search,
-            read_search_result,
-        ],
+        tools=tools,
     )
 
+
+# ---------------------------------------------------------------------------
+# Public entry point
+# ---------------------------------------------------------------------------
 
 async def agent_completion(
     config: Setup,
     message: str | Sequence[str],
 ) -> str:
     """Run Search Panda and return its final answer."""
+    global LAST_SOURCES
+    LAST_SOURCES = []
 
     if isinstance(message, (list, tuple)):
         prompt = " ".join(str(part) for part in message)
     else:
         prompt = str(message)
 
-    # Ollama is not an OpenAI-hosted model, so there is no reason to
-    # send OpenAI tracing data unless the application explicitly wants it.
     set_tracing_disabled(True)
 
+    web_mode = getattr(config, "web_mode", "on")
+
+    # If web_mode is explicitly 'off', run without tools for instant speed
+    if web_mode == "off":
+        agent = _build_agent(config)
+        agent.tools = []
+        result = await Runner.run(agent, prompt)
+        return result.final_output
+
     agent = _build_agent(config)
-
-    result = await Runner.run(
-        agent,
-        prompt,
-    )
-
+    result = await Runner.run(agent, prompt)
     return result.final_output
