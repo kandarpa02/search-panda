@@ -304,7 +304,7 @@ async def interactive_loop(verbose: bool = False) -> None:
 # Main Entrypoint
 # ---------------------------------------------------------------------------
 
-async def main(argv=None) -> None:
+async def async_main(argv=None) -> None:
     parser = build_parser()
     args = parser.parse_args(argv)
     verbose = getattr(args, "verbose", False)
@@ -330,6 +330,8 @@ async def main(argv=None) -> None:
 
     await interactive_loop(verbose=verbose)
 
+def main():
+    asyncio.run(async_main())
 
 if __name__ == "__main__":
     asyncio.run(main())
