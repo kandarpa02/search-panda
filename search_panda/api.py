@@ -67,7 +67,7 @@ class SearchPanda:
                     else saved.web_mode
                 ),
                 reasoning_level=reasoning_level or saved.reasoning_level,
-            ).resolve()
+            )
 
         else:
             self.setup = Setup(
@@ -87,7 +87,7 @@ class SearchPanda:
                 ),
                 web_mode=web_mode,
                 reasoning_level=reasoning_level,
-            ).resolve()
+            )
 
     # ------------------------------------------------------------------------
     # Core Queries
@@ -178,7 +178,7 @@ class SearchPanda:
         model: str,
     ) -> SearchPanda:
         self.setup.model = model.strip()
-        self.setup.resolve()
+        self.setup
         return self
 
     def set_provider(
@@ -196,7 +196,7 @@ class SearchPanda:
         if base_url:
             self.setup.base_url = base_url
 
-        self.setup.resolve()
+        self.setup
 
         return self
 
@@ -472,7 +472,7 @@ def create_api_app(
                 base_url=base_url,
                 web_mode=web_mode,
                 reasoning_level=reasoning_level,
-            ).resolve()
+            )
 
         except Exception as exc:
             raise HTTPException(
