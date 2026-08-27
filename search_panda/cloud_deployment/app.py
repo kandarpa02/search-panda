@@ -42,7 +42,7 @@ PROVIDER = get_env(
     "gemini",
 )
 
-API_KEY = get_env("GEMINI_API_KEY")
+API_KEY = get_env("API_KEY")
 
 BASE_URL = get_env(
     "BASE_URL",
