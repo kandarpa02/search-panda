@@ -22,7 +22,6 @@ from .agent.data_representation import (
     QueryPlan,
     SearchResponse,
     SearchResult,
-    Source,
 )
 from .agent.planner import plan as query_planner
 from .agent.search import search as search_engine, search_parallel
