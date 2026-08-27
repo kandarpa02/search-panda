@@ -6,6 +6,9 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
+class SearchResponse(BaseModel):
+    pass
+
 class SearchResult(BaseModel):
     """A single result returned from a web search."""
 
