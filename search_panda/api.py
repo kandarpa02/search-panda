@@ -17,7 +17,7 @@ import asyncio
 import json
 from typing import Any, AsyncGenerator, Sequence
 
-from .agent.agents import agent_completion_structured
+from .agent.agents import agent_completion
 from .agent.data_representation import (
     QueryPlan,
     SearchResponse,
@@ -126,7 +126,7 @@ class SearchPanda:
     ) -> SearchResponse:
         """Run an AI search query asynchronously."""
 
-        return await agent_completion_structured(
+        return await agent_completion(
             config=self.setup,
             message=query,
         )
@@ -554,7 +554,7 @@ def create_api_app(
         setup = resolve_request_setup(req)
 
         try:
-            return await agent_completion_structured(
+            return await agent_completion(
                 config=setup,
                 message=req.query,
             )
@@ -696,7 +696,7 @@ def create_api_app(
                 # ------------------------------------------------------------
 
                 task = asyncio.create_task(
-                    agent_completion_structured(
+                    agent_completion(
                         config=setup,
                         message=req.query,
                     )
