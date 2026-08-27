@@ -2,36 +2,46 @@
 
 Use this module to interact with Search Panda directly from Python applications,
 scripts, background workers, FastAPI/Flask/Django services, or Streamlit apps.
+
+It also exposes a FastAPI application with:
+
+- Standard JSON search endpoint
+- Query planning endpoint
+- SSE streaming endpoint for web UIs
+- Agent execution lifecycle events
 """
 
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Sequence
+import json
+from typing import Any, AsyncGenerator, Sequence
 
 from .agent.agents import agent_completion_structured
-from .agent.data_representation import QueryPlan, SearchResponse, SearchResult, Source
+from .agent.data_representation import (
+    QueryPlan,
+    SearchResponse,
+    SearchResult,
+    Source,
+)
 from .agent.planner import plan as query_planner
 from .agent.search import search as search_engine, search_parallel
-from .config import Setup, ConfigManager, DEFAULT_MODEL, DEFAULT_OLLAMA_BASE_URL, BASE_URL
+from .config import (
+    Setup,
+    ConfigManager,
+    DEFAULT_MODEL,
+    DEFAULT_OLLAMA_BASE_URL,
+    BASE_URL,
+)
+
+
+# ============================================================================
+# Python SDK
+# ============================================================================
 
 
 class SearchPanda:
-    """High-level Python SDK client for Search Panda.
-
-    Example:
-    ```python
-    from search_panda import SearchPanda
-
-    # Initialize client (uses Ollama by default or any OpenAI-compatible provider)
-    client = SearchPanda(model="llama3.2:1b")
-    response = client.ask("who won fifa 2026?")
-
-    print(response.answer)
-    for source in response.sources:
-        print(f"- [{source.title}]({source.url})")
-    ```
-    """
+    """High-level Python SDK client for Search Panda."""
 
     def __init__(
         self,
@@ -46,99 +56,174 @@ class SearchPanda:
         if load_config:
             manager = ConfigManager()
             saved = manager.load()
+
             self.setup = Setup(
                 model=model if model != DEFAULT_MODEL else saved.model,
                 provider=provider if provider != "ollama" else saved.provider,
                 api_key=api_key or saved.api_key,
                 base_url=base_url or saved.base_url,
-                web_mode=web_mode if web_mode != "on" else saved.web_mode,
+                web_mode=(
+                    web_mode
+                    if web_mode != "on"
+                    else saved.web_mode
+                ),
                 reasoning_level=reasoning_level or saved.reasoning_level,
             ).resolve()
+
         else:
             self.setup = Setup(
                 model=model,
                 provider=provider,
-                api_key=api_key or ("ollama" if provider == "ollama" else None),
-                base_url=base_url or BASE_URL.get(provider, DEFAULT_OLLAMA_BASE_URL),
+                api_key=api_key or (
+                    "ollama"
+                    if provider == "ollama"
+                    else None
+                ),
+                base_url=(
+                    base_url
+                    or BASE_URL.get(
+                        provider,
+                        DEFAULT_OLLAMA_BASE_URL,
+                    )
+                ),
                 web_mode=web_mode,
                 reasoning_level=reasoning_level,
             ).resolve()
 
-    # -----------------------------------------------------------------------
+    # ------------------------------------------------------------------------
     # Core Queries
-    # -----------------------------------------------------------------------
+    # ------------------------------------------------------------------------
 
-    def ask(self, query: str | Sequence[str]) -> SearchResponse:
-        """Run an AI search query synchronously and return a SearchResponse."""
+    def ask(
+        self,
+        query: str | Sequence[str],
+    ) -> SearchResponse:
+        """Run an AI search query synchronously."""
+
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
             loop = None
 
         if loop and loop.is_running():
-            # In an active async event loop (e.g. Jupyter or nested async)
-            # import nest_asyncio  # noqa: F401 (optional)
             import concurrent.futures
 
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                return pool.submit(asyncio.run, self.ask_async(query)).result()
-        else:
-            return asyncio.run(self.ask_async(query))
+            with concurrent.futures.ThreadPoolExecutor(
+                max_workers=1
+            ) as pool:
+                return pool.submit(
+                    asyncio.run,
+                    self.ask_async(query),
+                ).result()
 
-    async def ask_async(self, query: str | Sequence[str]) -> SearchResponse:
-        """Run an AI search query asynchronously and return a SearchResponse."""
-        return await agent_completion_structured(config=self.setup, message=query)
+        return asyncio.run(
+            self.ask_async(query)
+        )
 
-    # -----------------------------------------------------------------------
+    async def ask_async(
+        self,
+        query: str | Sequence[str],
+    ) -> SearchResponse:
+        """Run an AI search query asynchronously."""
+
+        return await agent_completion_structured(
+            config=self.setup,
+            message=query,
+        )
+
+    # ------------------------------------------------------------------------
     # Lower-level helpers
-    # -----------------------------------------------------------------------
+    # ------------------------------------------------------------------------
 
-    def plan(self, query: str) -> QueryPlan:
-        """Analyze query intent and build a query execution plan."""
-        return query_planner(query, web_mode=self.setup.web_mode)
+    def plan(
+        self,
+        query: str,
+    ) -> QueryPlan:
+        """Analyze query intent and build an execution plan."""
 
-    def search(self, query: str, max_results: int = 8) -> list[SearchResult]:
-        """Perform a web search using Search Panda's ranking engine."""
-        return search_engine(query, max_results=max_results)
+        return query_planner(
+            query,
+            web_mode=self.setup.web_mode,
+        )
 
-    async def search_async(self, queries: list[str], max_results_each: int = 5) -> list[SearchResult]:
-        """Run parallel searches across multiple sub-queries."""
-        return await search_parallel(queries, max_results_each=max_results_each)
+    def search(
+        self,
+        query: str,
+        max_results: int = 8,
+    ) -> list[SearchResult]:
+        """Perform a web search using Search Panda."""
 
-    # -----------------------------------------------------------------------
-    # Configuration updates
-    # -----------------------------------------------------------------------
+        return search_engine(
+            query,
+            max_results=max_results,
+        )
 
-    def set_model(self, model: str) -> SearchPanda:
-        """Switch active LLM model."""
+    async def search_async(
+        self,
+        queries: list[str],
+        max_results_each: int = 5,
+    ) -> list[SearchResult]:
+        """Run parallel searches."""
+
+        return await search_parallel(
+            queries,
+            max_results_each=max_results_each,
+        )
+
+    # ------------------------------------------------------------------------
+    # Configuration
+    # ------------------------------------------------------------------------
+
+    def set_model(
+        self,
+        model: str,
+    ) -> SearchPanda:
         self.setup.model = model.strip()
         self.setup.resolve()
         return self
 
-    def set_provider(self, provider: str, api_key: str | None = None, base_url: str | None = None) -> SearchPanda:
-        """Switch active LLM provider (e.g. 'openai', 'groq', 'deepseek', 'openrouter')."""
+    def set_provider(
+        self,
+        provider: str,
+        api_key: str | None = None,
+        base_url: str | None = None,
+    ) -> SearchPanda:
+
         self.setup.provider = provider.strip().lower()
+
         if api_key:
             self.setup.api_key = api_key
+
         if base_url:
             self.setup.base_url = base_url
+
         self.setup.resolve()
+
         return self
 
-    def set_web_mode(self, mode: str) -> SearchPanda:
-        """Switch web search mode ('on', 'off', 'auto')."""
+    def set_web_mode(
+        self,
+        mode: str,
+    ) -> SearchPanda:
+
         self.setup.web_mode = mode.strip().lower()
+
         return self
 
-    def set_reasoning_level(self, level: str | None) -> SearchPanda:
-        """Set reasoning effort ('low', 'medium', 'high' or None)."""
+    def set_reasoning_level(
+        self,
+        level: str | None,
+    ) -> SearchPanda:
+
         self.setup.reasoning_level = level
+
         return self
 
 
-# ---------------------------------------------------------------------------
-# Global Convenience Functions
-# ---------------------------------------------------------------------------
+# ============================================================================
+# Convenience Functions
+# ============================================================================
+
 
 def ask(
     query: str,
@@ -149,7 +234,7 @@ def ask(
     web_mode: str = "on",
     reasoning_level: str | None = None,
 ) -> SearchResponse:
-    """Synchronous shortcut to query Search Panda."""
+
     client = SearchPanda(
         model=model,
         provider=provider,
@@ -158,6 +243,7 @@ def ask(
         web_mode=web_mode,
         reasoning_level=reasoning_level,
     )
+
     return client.ask(query)
 
 
@@ -170,7 +256,7 @@ async def ask_async(
     web_mode: str = "on",
     reasoning_level: str | None = None,
 ) -> SearchResponse:
-    """Asynchronous shortcut to query Search Panda."""
+
     client = SearchPanda(
         model=model,
         provider=provider,
@@ -179,16 +265,18 @@ async def ask_async(
         web_mode=web_mode,
         reasoning_level=reasoning_level,
     )
+
     return await client.ask_async(query)
 
 
-# Alias
 async_ask = ask_async
 
 
-# ---------------------------------------------------------------------------
-# FastAPI Web App Factory
-# ---------------------------------------------------------------------------
+# ============================================================================
+# FastAPI Application
+# ============================================================================
+
+
 def create_api_app(
     default_model: str = DEFAULT_MODEL,
     default_provider: str = "ollama",
@@ -197,26 +285,37 @@ def create_api_app(
     default_web_mode: str = "on",
     default_reasoning_level: str | None = None,
 ) -> Any:
-    """Create and return a provider-agnostic FastAPI application.
+    """Create a Search Panda FastAPI application.
 
-    Supports:
-    - Ollama
-    - OpenAI
-    - Groq
-    - OpenRouter
-    - DeepSeek
-    - Any provider supported by Search Panda's Setup configuration
-    - Custom OpenAI-compatible APIs via base_url
+    Endpoints:
 
-    API key priority:
-        request api_key
-        -> app default_api_key
-        -> saved configuration api_key
+        GET  /api/health
+        POST /api/search
+        POST /api/search/stream
+        POST /api/plan
+
+    The streaming endpoint uses Server-Sent Events.
+
+    Event flow:
+
+        connected
+        planning
+        plan
+        searching
+        synthesizing
+        answer
+        done
+
+    Error event:
+
+        error
     """
 
     try:
         from fastapi import FastAPI, HTTPException
+        from fastapi.responses import StreamingResponse
         from pydantic import BaseModel, Field
+
     except ImportError:
         raise ImportError(
             "FastAPI is required for create_api_app(). "
@@ -225,12 +324,17 @@ def create_api_app(
 
     app = FastAPI(
         title="Search Panda API",
-        description="Provider-agnostic agentic AI search API",
+        description=(
+            "Provider-agnostic agentic AI search API "
+            "with real-time execution streaming."
+        ),
         version="0.2.0",
     )
 
-    # Load saved config so existing Search Panda configuration
-    # continues to work as a fallback.
+    # ------------------------------------------------------------------------
+    # Default configuration
+    # ------------------------------------------------------------------------
+
     config_client = SearchPanda(
         model=default_model,
         provider=default_provider,
@@ -241,7 +345,12 @@ def create_api_app(
         load_config=True,
     )
 
+    # ------------------------------------------------------------------------
+    # Request Models
+    # ------------------------------------------------------------------------
+
     class SearchRequest(BaseModel):
+
         query: str = Field(
             ...,
             min_length=1,
@@ -250,7 +359,7 @@ def create_api_app(
 
         model: str | None = Field(
             default=None,
-            description="Model name to use for this request",
+            description="Model name to use",
         )
 
         provider: str | None = Field(
@@ -272,8 +381,7 @@ def create_api_app(
         base_url: str | None = Field(
             default=None,
             description=(
-                "Optional custom API base URL. "
-                "Useful for OpenAI-compatible providers."
+                "Optional OpenAI-compatible API base URL."
             ),
         )
 
@@ -288,6 +396,7 @@ def create_api_app(
         )
 
     class PlanRequest(BaseModel):
+
         query: str = Field(
             ...,
             min_length=1,
@@ -299,8 +408,14 @@ def create_api_app(
             description="Web search mode: on, off, or auto",
         )
 
-    def resolve_request_setup(req: SearchRequest) -> Setup:
-        """Create an isolated provider configuration per request."""
+    # ------------------------------------------------------------------------
+    # Setup Resolver
+    # ------------------------------------------------------------------------
+
+    def resolve_request_setup(
+        req: SearchRequest,
+    ) -> Setup:
+        """Create an isolated provider configuration."""
 
         provider = (
             req.provider
@@ -314,16 +429,12 @@ def create_api_app(
             or config_client.setup.model
         ).strip()
 
-        # Priority:
-        # request -> app default -> saved config
         api_key = (
             req.api_key
             or default_api_key
             or config_client.setup.api_key
         )
 
-        # Priority:
-        # request -> app default -> saved config
         base_url = (
             req.base_url
             or default_base_url
@@ -342,11 +453,9 @@ def create_api_app(
             or config_client.setup.reasoning_level
         )
 
-        # Ollama does not require a user-supplied API key.
         if provider == "ollama" and not api_key:
             api_key = "ollama"
 
-        # Non-Ollama providers require credentials.
         elif provider != "ollama" and not api_key:
             raise HTTPException(
                 status_code=400,
@@ -369,15 +478,47 @@ def create_api_app(
         except Exception as exc:
             raise HTTPException(
                 status_code=400,
-                detail=f"Invalid provider configuration: {exc}",
+                detail=(
+                    f"Invalid provider configuration: {exc}"
+                ),
             )
+
+    # ------------------------------------------------------------------------
+    # SSE Helpers
+    # ------------------------------------------------------------------------
+
+    def serialize(
+        value: Any,
+    ) -> Any:
+        """Convert Pydantic objects to JSON-safe data."""
+
+        if hasattr(value, "model_dump"):
+            return value.model_dump()
+
+        if hasattr(value, "dict"):
+            return value.dict()
+
+        return value
+
+    def sse_event(
+        event: str,
+        data: Any,
+    ) -> str:
+        """Format a Server-Sent Event."""
+
+        payload = serialize(data)
+
+        return (
+            f"event: {event}\n"
+            f"data: {json.dumps(payload, default=str)}\n\n"
+        )
+
+    # ------------------------------------------------------------------------
+    # Health
+    # ------------------------------------------------------------------------
 
     @app.get("/api/health")
     def health() -> dict[str, Any]:
-        """Return API status and default configuration.
-
-        API keys are intentionally never exposed.
-        """
 
         return {
             "status": "healthy",
@@ -388,7 +529,13 @@ def create_api_app(
             "default_reasoning_level": (
                 config_client.setup.reasoning_level
             ),
+            "streaming": True,
+            "stream_endpoint": "/api/search/stream",
         }
+
+    # ------------------------------------------------------------------------
+    # Standard Search
+    # ------------------------------------------------------------------------
 
     @app.post(
         "/api/search",
@@ -418,14 +565,289 @@ def create_api_app(
         except Exception as exc:
             raise HTTPException(
                 status_code=500,
-                detail=f"Search execution failed: {str(exc)}",
+                detail=(
+                    f"Search execution failed: {str(exc)}"
+                ),
             )
+
+    # ------------------------------------------------------------------------
+    # Streaming Search
+    # ------------------------------------------------------------------------
+
+    @app.post("/api/search/stream")
+    async def api_search_stream(
+        req: SearchRequest,
+    ) -> StreamingResponse:
+        """Run a Search Panda query with live execution events."""
+
+        if not req.query.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="Query cannot be empty.",
+            )
+
+        setup = resolve_request_setup(req)
+
+        async def event_generator() -> AsyncGenerator[str, None]:
+
+            try:
+
+                # ------------------------------------------------------------
+                # Connection established
+                # ------------------------------------------------------------
+
+                yield sse_event(
+                    "connected",
+                    {
+                        "message": "Connected to Search Panda",
+                        "query": req.query,
+                    },
+                )
+
+                # ------------------------------------------------------------
+                # Planning
+                # ------------------------------------------------------------
+
+                yield sse_event(
+                    "status",
+                    {
+                        "stage": "planning",
+                        "state": "running",
+                        "message": "Analyzing query",
+                    },
+                )
+
+                await asyncio.sleep(0)
+
+                try:
+                    query_plan = query_planner(
+                        req.query,
+                        web_mode=setup.web_mode,
+                    )
+
+                    yield sse_event(
+                        "plan",
+                        {
+                            "stage": "planning",
+                            "state": "completed",
+                            "intent": query_plan.intent,
+                            "needs_search": query_plan.needs_search,
+                            "time_sensitive": (
+                                query_plan.time_sensitive
+                            ),
+                            "sub_queries": (
+                                query_plan.sub_queries
+                            ),
+                            "site_hints": (
+                                query_plan.site_hints
+                            ),
+                        },
+                    )
+
+                except Exception as plan_error:
+
+                    yield sse_event(
+                        "status",
+                        {
+                            "stage": "planning",
+                            "state": "completed",
+                            "message": (
+                                "Planning completed with "
+                                "limited metadata"
+                            ),
+                            "warning": str(plan_error),
+                        },
+                    )
+
+                # ------------------------------------------------------------
+                # Search stage
+                # ------------------------------------------------------------
+
+                if setup.web_mode != "off":
+
+                    yield sse_event(
+                        "status",
+                        {
+                            "stage": "searching",
+                            "state": "running",
+                            "message": (
+                                "Searching and collecting sources"
+                            ),
+                        },
+                    )
+
+                else:
+
+                    yield sse_event(
+                        "status",
+                        {
+                            "stage": "searching",
+                            "state": "skipped",
+                            "message": (
+                                "Web search is disabled"
+                            ),
+                        },
+                    )
+
+                await asyncio.sleep(0)
+
+                # ------------------------------------------------------------
+                # Agent execution
+                # ------------------------------------------------------------
+
+                task = asyncio.create_task(
+                    agent_completion_structured(
+                        config=setup,
+                        message=req.query,
+                    )
+                )
+
+                yielded_synthesizing = False
+
+                while not task.done():
+
+                    if not yielded_synthesizing:
+
+                        yield sse_event(
+                            "status",
+                            {
+                                "stage": "processing",
+                                "state": "running",
+                                "message": (
+                                    "Search Panda is researching "
+                                    "and analyzing evidence"
+                                ),
+                            },
+                        )
+
+                        yielded_synthesizing = True
+
+                    # Keep SSE connection alive while the agent works.
+                    yield ": keep-alive\n\n"
+
+                    await asyncio.sleep(2)
+
+                response = await task
+
+                # ------------------------------------------------------------
+                # Sources
+                # ------------------------------------------------------------
+
+                sources = getattr(
+                    response,
+                    "sources",
+                    [],
+                ) or []
+
+                if sources:
+
+                    yield sse_event(
+                        "status",
+                        {
+                            "stage": "sources",
+                            "state": "completed",
+                            "message": (
+                                f"Collected {len(sources)} sources"
+                            ),
+                            "count": len(sources),
+                        },
+                    )
+
+                    for index, source in enumerate(
+                        sources,
+                        start=1,
+                    ):
+
+                        yield sse_event(
+                            "source",
+                            {
+                                "index": index,
+                                "source": serialize(source),
+                            },
+                        )
+
+                        await asyncio.sleep(0)
+
+                # ------------------------------------------------------------
+                # Synthesis
+                # ------------------------------------------------------------
+
+                yield sse_event(
+                    "status",
+                    {
+                        "stage": "synthesizing",
+                        "state": "completed",
+                        "message": "Answer generated",
+                    },
+                )
+
+                # ------------------------------------------------------------
+                # Final answer
+                # ------------------------------------------------------------
+
+                yield sse_event(
+                    "answer",
+                    serialize(response),
+                )
+
+                yield sse_event(
+                    "done",
+                    {
+                        "success": True,
+                        "message": (
+                            "Search Panda execution completed"
+                        ),
+                    },
+                )
+
+            except asyncio.CancelledError:
+
+                yield sse_event(
+                    "done",
+                    {
+                        "success": False,
+                        "message": (
+                            "Search request cancelled"
+                        ),
+                    },
+                )
+
+                raise
+
+            except Exception as exc:
+
+                yield sse_event(
+                    "error",
+                    {
+                        "message": str(exc),
+                    },
+                )
+
+                yield sse_event(
+                    "done",
+                    {
+                        "success": False,
+                    },
+                )
+
+        return StreamingResponse(
+            event_generator(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
+    # ------------------------------------------------------------------------
+    # Query Planner
+    # ------------------------------------------------------------------------
 
     @app.post(
         "/api/plan",
         response_model=QueryPlan,
     )
-    
     def api_plan(
         req: PlanRequest,
     ) -> QueryPlan:
