@@ -29,6 +29,7 @@ dependencies = [
 
 [project.scripts]
 search_panda = "search_panda.run:main"
+search_panda_api = "search_panda.api
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
