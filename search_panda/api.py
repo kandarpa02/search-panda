@@ -1039,9 +1039,8 @@ def create_api_app(
 
     return app
 
-if __name__ == "__main__":
+def main():
     import uvicorn
-
     uvicorn.run(
         create_api_app(),
         host="127.0.0.1",
