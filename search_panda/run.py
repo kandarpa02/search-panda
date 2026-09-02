@@ -43,6 +43,7 @@ def ensure_setup() -> Setup:
 def update_setup(
     model: str | None = None,
     base_url: str | None = None,
+    api_key: str | None = None,
     web_mode: str | None = None,
 ) -> Setup:
     setup = ensure_setup()
@@ -50,6 +51,8 @@ def update_setup(
         setup.model = model.strip()
     if base_url:
         setup.base_url = base_url.strip()
+    if api_key:
+        setup.api_key = api_key.strip()
     if web_mode:
         setup.web_mode = web_mode.strip().lower()
     config_manager.save(setup)
@@ -83,6 +86,7 @@ def print_help() -> None:
     table.add_row("/help, /?", "Show this list of commands")
     table.add_row("/show, /info", "Display current model and configuration")
     table.add_row("/web [on|off|auto]", "Switch web search mode (on=always search, off=no web, auto=smart)")
+    table.add_row("/url_and_api <url> <api_key>", "Set custom API endpoint and key (e.g. /url_and_api https://api.example.com sk-xxxxxxxxxxxxxxxxxxxxxxxx)")
     table.add_row("/model <name>", "Switch active LLM model (e.g. /model llama3.2:1b)")
     table.add_row("/set <key> <val>", "Set config parameter (e.g. /set model llama3.1:8b, /set web on)")
     table.add_row("/verbose [on|off]", "Toggle query plan & evidence inspection")
@@ -144,6 +148,14 @@ def handle_slash_command(cmd_line: str, setup: Setup, verbose: bool) -> tuple[Se
             console.print(f"Web mode set to [bold green]{setup.web_mode.upper()}[/bold green]")
         else:
             console.print("[yellow]Usage: /web on | /web off | /web auto[/yellow]")
+        return setup, verbose, True
+
+    if cmd in {"/url_and_api"}:
+        if arg1 and arg2:
+            setup = update_setup(base_url=arg1, api_key=arg2)
+            console.print(f"Endpoint set to [bold green]{setup.base_url}[/bold green]")
+        else:
+            console.print("[yellow]Usage: /url_and_api <url> <api_key> (e.g. /url_and_api https://api.example.com sk-xxxxxxxxxxxxxxxxxxxxxxxx)[/yellow]")
         return setup, verbose, True
 
     if cmd in {"/model"}:
@@ -253,6 +265,12 @@ def build_parser() -> argparse.ArgumentParser:
         nargs="?",
         help="Model name to save when using 'set'.",
     )
+    parser.add_argument(
+        "--url_and_key",
+        dest="url_and_key",
+        nargs=2,
+        help="Set custom API endpoint and key (e.g. --url_and_key https://api.example.com sk-xxxxxxxxxxxxxxxxxxxxxxxx)",
+    )
     return parser
 
 
@@ -325,6 +343,14 @@ async def async_main(argv=None) -> None:
             parser.error("Usage: search-panda set llama3.1:8b")
         setup = update_setup(model=args.model_name)
         console.print(f"Model set to [green]{setup.model}[/green]")
+        await interactive_loop(verbose=verbose)
+        return
+
+    if args.url_and_key:
+        url, api_key = args.url_and_key
+        setup = update_setup(base_url=url, api_key=api_key)
+        console.print(f"Endpoint set to [bold green]{setup.base_url}[/bold green]")
+        console.print(f"API key set to [bold green]{setup.api_key}[/bold green]")
         await interactive_loop(verbose=verbose)
         return
 

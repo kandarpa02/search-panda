@@ -17,6 +17,15 @@ import asyncio
 import json
 from typing import Any, AsyncGenerator, Sequence
 
+from fastapi import HTTPException, Request, FastAPI
+from fastapi.responses import JSONResponse
+import time
+import uuid
+
+from openai import AsyncOpenAI
+
+from search_panda.cloud_deployment import app
+
 from .agent.agents import agent_completion
 from .agent.data_representation import (
     QueryPlan,
@@ -283,6 +292,7 @@ def create_api_app(
     default_base_url: str | None = None,
     default_web_mode: str = "on",
     default_reasoning_level: str | None = None,
+    model_prefix: str = "search-panda/",
 ) -> Any:
     """Create a Search Panda FastAPI application.
 
@@ -875,4 +885,165 @@ def create_api_app(
                 detail=f"Planning failed: {str(exc)}",
             )
 
+    # ------------------------------------------------------------------------
+    # OpenAI-compatible API for Open WebUI
+    # ------------------------------------------------------------------------
+
+    def public_model_id(model_id: str) -> str:
+        """Namespace provider models for Open WebUI."""
+        if not model_prefix:
+            return model_id
+        return model_id if model_id.startswith(model_prefix) else f"{model_prefix}{model_id}"
+
+    def provider_model_id(model_id: str) -> str:
+        """Convert an Open WebUI model id back to the provider's model id."""
+        if model_prefix and model_id.startswith(model_prefix):
+            return model_id[len(model_prefix):]
+        return model_id
+
+    model_cache: dict[str, Any] = {
+        "expires_at": 0.0,
+        "data": [],
+    }
+
+    @app.get("/v1/models")
+    async def openai_models():
+        """Expose every model advertised by the configured OpenAI-compatible backend."""
+
+        now = time.time()
+        if now < model_cache["expires_at"] and model_cache["data"]:
+            return {"object": "list", "data": model_cache["data"]}
+
+        setup = config_client.setup
+        api_key = setup.api_key or (
+            "ollama" if setup.provider == "ollama" else None
+        )
+
+        if not setup.base_url:
+            raise HTTPException(
+                status_code=500,
+                detail="No OpenAI-compatible base URL is configured.",
+            )
+
+        try:
+            client = AsyncOpenAI(
+                api_key=api_key or "none",
+                base_url=setup.base_url,
+            )
+            provider_models = await client.models.list()
+
+            data = []
+            for model in provider_models.data:
+                model_id = getattr(model, "id", None)
+                if not model_id:
+                    continue
+
+                data.append({
+                    "id": public_model_id(model_id),
+                    "object": "model",
+                    "created": getattr(model, "created", int(now)),
+                    "owned_by": "search-panda",
+                })
+
+            # Some compatible servers implement chat but not /models.
+            if not data:
+                data.append({
+                    "id": public_model_id(setup.model),
+                    "object": "model",
+                    "created": int(now),
+                    "owned_by": "search-panda",
+                })
+
+            model_cache["data"] = data
+            model_cache["expires_at"] = now + 30
+
+            return {"object": "list", "data": data}
+
+        except Exception as exc:
+            # Keep Open WebUI usable even if model discovery is unavailable.
+            fallback = {
+                "id": public_model_id(setup.model),
+                "object": "model",
+                "created": int(now),
+                "owned_by": "search-panda",
+            }
+            model_cache["data"] = [fallback]
+            model_cache["expires_at"] = now + 10
+
+            return {
+                "object": "list",
+                "data": [fallback],
+            }
+
+    @app.post("/v1/chat/completions")
+    async def openai_chat_completions(request: Request):
+        body = await request.json()
+
+        messages = body.get("messages", [])
+        requested_model = (
+            body.get("model") or config_client.setup.model
+        ).strip()
+        provider_model = provider_model_id(requested_model)
+
+        user_message = next(
+            (
+                msg.get("content", "")
+                for msg in reversed(messages)
+                if msg.get("role") == "user"
+            ),
+            "",
+        )
+
+        if not user_message:
+            raise HTTPException(
+                status_code=400,
+                detail="No user message provided.",
+            )
+
+        # Per-request config: selecting a model in Open WebUI only affects
+        # this request and does not mutate the global/default configuration.
+        try:
+            setup = config_client.setup.model_copy(deep=True)
+        except AttributeError:
+            # Fallback for non-Pydantic Setup implementations.
+            import copy
+            setup = copy.deepcopy(config_client.setup)
+
+        setup.model = provider_model
+
+        response = await agent_completion(
+            config=setup,
+            message=user_message,
+        )
+
+        content = getattr(response, "answer", None)
+        if content is None:
+            content = str(response)
+
+        return {
+            "id": f"chatcmpl-{uuid.uuid4().hex}",
+            "object": "chat.completion",
+            "created": int(time.time()),
+            "model": requested_model,
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": content,
+                    },
+                    "finish_reason": "stop",
+                }
+            ],
+        }
+
     return app
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(
+        create_api_app(),
+        host="127.0.0.1",
+        port=8387
+    )
